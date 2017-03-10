@@ -1,10 +1,10 @@
 /*
-   SCRIPT FOR REPORTING PERFOMANCE
+   SCRIPT FOR REPORTING PERFOMANCE 
    EPA DIGITAL
    @v1.0.0
    @change logs:
     -
-
+   
 */
 
 //VARIABLES FOR KEYWORDS COMPUTE DATA
@@ -24,9 +24,10 @@ var exactKws = [];
 
 //VARIABLES FOR ADS COMPUTE DATA
 var since_days = 200;
-var to_days =  190;
+var to_days =  199;
+var bad_code = 400;
 
-
+ 
 //Just for know wich campaigns are enable and then work with them.
 function fillActiveCampaigns(){
   var campaigns = AdWordsApp.campaigns()
@@ -42,7 +43,7 @@ function fillActiveCampaigns(){
 }
 
 //
-function Settings() {
+function Settings() { 
    var currentAccount = AdWordsApp.currentAccount();
    var stats = currentAccount.getStatsFor(period);
    var account = {
@@ -57,19 +58,19 @@ function Settings() {
 function genericCampaign(name) {
   if(name.indexOf("SEM") != -1 || name.indexOf("No Brand") != -1 || name.indexOf("Sem") != -1 || name.indexOf("NO BRAND") != -1 || name.indexOf("No BRAND") != -1)
     return true;
-  else
+  else 
     return false;
 }
 ////////////////////////////////////////////////////////////////////////// HERE START KEYWORDS DATA ////////////////////////////////////////////////////////////////////
 
-//Verify if the number of '+' is equal to number of spaces plus one, because the broad structure is: +word1 +word2 +word3 and so on
+//Verify if the number of '+' is equal to number of spaces plus one, because the broad structure is: +word1 +word2 +word3 and so on 
 function checkPlus(cad) {
   var lower = cad.toLowerCase();
   var spaces = lower.split(' ').length-1;
   var plus = lower.split('+').length-1;
-
+  
   if (spaces+1 == plus)
-    return false
+    return false 
   else
     return true;
 }
@@ -84,13 +85,13 @@ function cleanKw(kw) {
 //Inspect if the keyword has the correct structure for broad concordance
 function noPlusKw(){
    wrongKW = [];
-
+  
   for(var i = 0 ; i < activeCampaigns.length ; i++){
     var keywords = activeCampaigns[i].keywords()
     .withCondition("Status = ENABLED")
     .withCondition("KeywordMatchType = BROAD")
     .get();
-
+    
     while(keywords.hasNext()){
       var kw = keywords.next();
       if( checkPlus(kw.getText()) ){
@@ -120,14 +121,14 @@ function kwQStatus(){
     var adRelevance = row['CreativeQualityScore'];
     var landingRelevance = row['PostClickQualityScore'];
     var isGeneric =  genericCampaign(row['CampaignName']);
-
+    
     if((expCTR == "Below average" || expCTR == "Average") && isGeneric){
       var kw = {
         campaign : row['CampaignName'],
         adGroup : row['AdGroupName'],
         text : row['Criteria'],
         status : expCTR,
-      };
+      }; 
       qsStatus.push(kw);
     }
     if((adRelevance == "Below average" || adRelevance == "Average") && isGeneric){
@@ -155,7 +156,7 @@ function kwQStatus(){
 function brandKWQS(){
   var qslessnine = [];
   for(var i = 0; i < brandCampaigns.length ; i++) {
-   var kws = brandCampaigns[i].keywords().get();
+   var kws = brandCampaigns[i].keywords().get(); 
     while(kws.hasNext()){
       var kw = kws.next();
       var qs = kw.getQualityScore();
@@ -188,7 +189,7 @@ function negatives() {
     var negatives = activeCampaigns[i].negativeKeywords()
     .withCondition("KeywordMatchType = EXACT")
     .get();
-
+    
     while(negatives.hasNext()){
       var negative = negatives.next();
       var kw = cleanKw(negative.getText());
@@ -205,7 +206,7 @@ function ExactKws() {
     .withCondition("KeywordMatchType = EXACT")
     .withCondition("Status = ENABLED")
     .get();
-
+    
     while(kws.hasNext()) {
       var kw = kws.next();
       var kwText = cleanKw(kw.getText());
@@ -217,14 +218,14 @@ function ExactKws() {
 function searchTerms() {
    var shouldBe = [];
    ExactKws();
-
+  
    var report = AdWordsApp.report(
       'SELECT Query, Clicks, Cost, Ctr, ConversionRate,' +
       ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE ' +' Conversions > 0' +
       ' AND Impressions > ' + almostImpressions +'');
-
+  
   var rows = report.rows();
   while(rows.hasNext()) {
     var row = rows.next();
@@ -237,7 +238,7 @@ function searchTerms() {
 
 function searchTermsClicks() {
   var noExactKws = [];
-
+      
   var report = AdWordsApp.report(
       'SELECT Query, Clicks, Cost, Ctr, ConversionRate,' +
       ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
@@ -245,7 +246,7 @@ function searchTermsClicks() {
       ' WHERE Clicks > 10' +
       ' AND Impressions > ' + almostImpressions +
       ' DURING '+monthPeriod,{apiVersion: 'v201605'});
-
+  
   var rows = report.rows();
   while(rows.hasNext()) {
     var row = rows.next();
@@ -260,14 +261,14 @@ function searchTermsClicks() {
 function searchTermsNegatives() {
   var shouldBeNegatives = [];
   negatives();
-
+  
    var report = AdWordsApp.report(
       'SELECT Query, Clicks, Cost, Ctr, ConversionRate, Impressions,' +
       ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE Impressions > 200' +
       ' DURING '+monthPeriod,{apiVersion: 'v201605'});
-
+  
   var rows = report.rows();
   while(rows.hasNext()) {
     var row = rows.next();
@@ -281,8 +282,8 @@ function searchTermsNegatives() {
 //when answer the question run this function
 function repeatedKeywords() {
   var allKeywords = [];
-  var repeatedKws = [];
-
+  var repeatedKws = []; 
+  
   for(i in activeCampaigns) {
     var kws = activeCampaigns[i].keywords().get();
     while(kws.hasNext()) {
@@ -303,17 +304,17 @@ function KeyWords() {
   //var kwlessQS = brandKWQS();
   //kwQStatus(); //fills qsStatus array
   //var woNegatives = withOutNegatives();
-  //var shouldBeInExact = searchTerms();
+  //var shouldBeInExact = searchTerms();    
   //var noExactKws = searchTermsClicks();
   //var shouldbeNegatives = searchTermsNegatives();
-  //var repeated = repeatedKeywords(); RUNS WHEN TOTE ANSWER
+  //var repeated = repeatedKeywords(); RUNS WHEN TOTE ANSWER 
 }
 
 ////////////////////////////////////////////////////////////////////////// HERE FINISH KEYWORDS DATA AND START ADS DATA ////////////////////////////////////////////////////////////////////
 
 function lessTwo() {
    var adGroups = [];
-
+ 
   for(i in activeCampaigns) {
     if(activeCampaigns[i].getName() == "AW_DO_SEM_MPNs")
       continue;
@@ -333,43 +334,146 @@ function lessTwo() {
       }
     }
   }
-  return adGroups;
+  return adGroups;  
 }
 
 function oldETAAds() {
+  var oldAds = [];
   var startDate = new Date();
   startDate.setDate(startDate.getDate() - since_days);
   startDate = Utilities.formatDate(startDate, AdWordsApp.currentAccount().getTimeZone(),"yyyyMMdd");
-
+  
   var endDate = new Date();
   endDate.setDate(endDate.getDate() - to_days);
   endDate = Utilities.formatDate(endDate, AdWordsApp.currentAccount().getTimeZone(),"yyyyMMdd");
-
+    
   var dateRange = startDate+','+endDate;
   Logger.log(dateRange)
-
+  
   var report = AdWordsApp.report(
       'SELECT Date,Id,AdGroupId,CampaignId,Conversions' +
       ' FROM AD_PERFORMANCE_REPORT' +
       ' WHERE Impressions > 20' +
       ' DURING '+dateRange,{apiVersion: 'v201605'});
-
+  
   var rows = report.rows();
   while(rows.hasNext()){
     var row = rows.next();
-    Logger.log(row['Id']+'  '+row['Date']+' '+row['CampaignId'] +"   "+row['Conversions']);
+    
+    var campaign = AdWordsApp.campaigns()
+      .withIds([row['CampaignId']])
+      .withCondition('Status = ENABLED')
+      .get();
+    
+    if(campaign.totalNumEntities() > 0){
+      var camp = campaign.next();
+      var ids = [[row['AdGroupId'],row['Id']]];
+      var ads = camp.ads().withIds(ids).get().next();
+      var  ad = {
+        title : ads.getHeadline(),
+        adGroup : ads.getAdGroup(),
+        campaign : camp.getName(),
+      };
+      oldAds.push(ad);
+    }
   }
+  return oldAds;
+}
+
+function url404() {
+  var badUrls = [];
+  var checked = [];
+  var badCodes = [];
+  
+  var iters = [
+    AdWordsApp.ads()
+      .withCondition("Status = 'ENABLED'")
+      .withCondition("AdGroupStatus = 'ENABLED'")
+      .withCondition("CampaignStatus = 'ENABLED'")
+      .get()
+  ];
+  /*AdWordsApp.ads()
+      .withCondition("Status = 'ENABLED'")
+      .withCondition("AdGroupStatus = 'ENABLED'")
+      .withCondition("CampaignStatus = 'ENABLED'")
+      .get().next().urls().getFinalUrl()*/
+  //Logger.log(iters[1].totalNumEntities());
+  for(i in iters){
+    var iter = iters[i];
+    while(iter.hasNext()){
+      var entity = iter.next();
+      var url = entity.urls().getFinalUrl();
+      //Logger.log(url+' '+entity)
+      if(url == null) 
+        continue;
+      if(url.indexOf('{') >= 0) {
+        url = url.replace(/\{[0-9a-zA-Z]+\n}/g,'');
+      }
+      if(checked[url])
+        continue;
+      var response_code;
+      try{
+        response_code = UrlFetchApp.fetch(url).getResponseCode();
+        Logger.log(response_code);
+      }catch(e){
+        
+        badUrls.push({e:entity,code: response_code});
+        Logger.log("something wrong");
+      }
+      if(response_code == bad_code)
+        badCodes.push({entity: entity,response: response_code});
+      checked[url] = true;
+    }
+  }
+  var res = {
+    badUrls : badUrls,
+    badCodes: badCodes,
+  };
+  return res;
 }
 
 function Ads() {
   //var lessTwoAds = lessTwo();
-  oldETAAds();
+  //var oldAds = oldETAAds();
+  //var invalidUrls = url404(); WAITING IF IT RUNS OVER ALL AD TYPES
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////  HERE FINISH ADS AND START EXTENSIONS PERFORMANCE REPORT   ///////////////////////////////
+
+function siteLinksWODesc(){
+  var withoutDesc = [];
+  
+  for(i in activeCampaigns){
+    var curr_campaign = activeCampaigns[i];
+    var sitelinks = curr_campaign.extensions().sitelinks().get();
+    while(sitelinks.hasNext()){
+      var sitelink = sitelinks.next();
+      var description1 = sitelink.getDescription1();
+      var description2 = sitelink.getDescription2();
+      if(description1.length == 0 || description2.length == 0){
+        var stL = {
+          id : sitelink.getId(),
+          campaign : activeCampaigns[i].getName(),
+          description1: description1,
+          description2 : description2,
+        };
+        withoutDesc.push(stL);
+      }
+    }
+  }
 }
 
 
-function main() {
+function Extensions() {
+ var withoutDescription = siteLinksWODesc();
+ for(i in withoutDescription)
+   Logger.log(withoutDescription[i].campaing+"  "+withoutDescription[i].description1+"  "+withoutDescription[i].description2);
+}
+
+
+function main() {  
    fillActiveCampaigns();
-   //Logger.log(Settings());
+  //Logger.log(Settings());  
    KeyWords();
    Ads();
 }
