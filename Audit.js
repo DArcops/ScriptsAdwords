@@ -42,7 +42,7 @@ function fillActiveCampaigns(){
   }
 }
 
-//
+////////////////////////////////////////////////////////////////////////////// COMPUTE PERFORMANCE SETTINGS ///////////////////////////////////////////////////////
 function Settings() { 
    var currentAccount = AdWordsApp.currentAccount();
    var stats = currentAccount.getStatsFor(period);
@@ -307,7 +307,7 @@ function KeyWords() {
   //var shouldBeInExact = searchTerms();    
   //var noExactKws = searchTermsClicks();
   //var shouldbeNegatives = searchTermsNegatives();
-  //var repeated = repeatedKeywords(); RUNS WHEN TOTE ANSWER 
+  //var repeated = repeatedKeywords();
 }
 
 ////////////////////////////////////////////////////////////////////////// HERE FINISH KEYWORDS DATA AND START ADS DATA ////////////////////////////////////////////////////////////////////
@@ -440,6 +440,26 @@ function Ads() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////  HERE FINISH ADS AND START EXTENSIONS PERFORMANCE REPORT   ///////////////////////////////
 
+function activeSiteLinks() {
+  var less4sitelinks = [];
+  AdWordsApp.campaigns().get().next().extensions().sitelinks().get().next().
+  for(i in activeCampaigns){
+    var curr_camp = activeCampaigns[i];
+    var sitelinks = curr_camp.extensions().sitelinks().get();
+    var count = 0;
+    while(sitelinks.hasNext()){
+      var sitelink = sitelinks.next();
+      var impressions = sitelink.getStatsFor("LAST_DAY").getImpressions();
+      Logger.log(sitelink.getLinkText()+"  "+impressions)
+      if(impressions <= 1)
+        count++;
+    }
+    if(count < 4)
+      less4sitelinks.push(activeCampaigns[i]);
+  }
+  return less4sitelinks;
+}
+
 function siteLinksWODesc(){
   var withoutDesc = [];
   
@@ -450,7 +470,8 @@ function siteLinksWODesc(){
       var sitelink = sitelinks.next();
       var description1 = sitelink.getDescription1();
       var description2 = sitelink.getDescription2();
-      if(description1.length == 0 || description2.length == 0){
+      Logger.log(description1+"  "+description2);
+      if(description1 == null || description2 == null){
         var stL = {
           id : sitelink.getId(),
           campaign : activeCampaigns[i].getName(),
@@ -461,13 +482,12 @@ function siteLinksWODesc(){
       }
     }
   }
+  return withoutDesc;
 }
 
-
 function Extensions() {
- var withoutDescription = siteLinksWODesc();
- for(i in withoutDescription)
-   Logger.log(withoutDescription[i].campaing+"  "+withoutDescription[i].description1+"  "+withoutDescription[i].description2);
+ //var withoutDescription = siteLinksWODesc();
+  var active = activeSitelinks();
 }
 
 
@@ -476,4 +496,5 @@ function main() {
   //Logger.log(Settings());  
    KeyWords();
    Ads();
+   Extensions();
 }
