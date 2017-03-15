@@ -30,7 +30,8 @@ var bad_code = 400;
 //VARIABLES FOR BIDS
 var targetCPA = 1000; //depending account update this variable
 var days_for_cost = 60;
-var costxconv = "LAST_7_DAYS"; //dateRange for cost per conversion query
+var costxconv_large = "LAST_MONTH"; //dateRange for cost per conversion query
+var costxconv_short = "LAST_7_DAYS"; //dateRange for cost per conversion query during last seven days
 
  
 //Just for know wich campaigns are enable and then work with them.
@@ -385,8 +386,8 @@ function oldETAAds() {
 }
 
 function url404() {
-  var badUrls = [];
-  var checked = [];
+  var badUrls  = [];
+  var checked  = [];
   var badCodes = [];
   
   var iters = [
@@ -394,6 +395,7 @@ function url404() {
       .withCondition("Status = 'ENABLED'")
       .withCondition("AdGroupStatus = 'ENABLED'")
       .withCondition("CampaignStatus = 'ENABLED'")
+      .withCondition("Type = 'TEXT_AD'")
       .get()
   ];
   for(i in iters){
@@ -401,7 +403,7 @@ function url404() {
     while(iter.hasNext()){
       var entity = iter.next();
       var url = entity.urls().getFinalUrl();
-      //Logger.log(url+' '+entity)
+
       if(url == null) 
         continue;
       if(url.indexOf('{') >= 0) {
@@ -433,7 +435,7 @@ function url404() {
 function Ads() {
   //var lessTwoAds = lessTwo();
   //var oldAds = oldETAAds();
-  //var invalidUrls = url404(); WAITING IF IT RUNS OVER ALL AD TYPES
+  //var invalidUrls = url404();
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////  HERE FINISH ADS AND START EXTENSIONS PERFORMANCE REPORT   ///////////////////////////////
@@ -582,25 +584,67 @@ function costPerConversion() {
       'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId' +
       ' FROM ADGROUP_PERFORMANCE_REPORT'+
       ' WHERE CostPerConversion > ' + 3*targetCPA +
-      ' DURING '+costxconv);
+      ' DURING '+costxconv_large);
   
   var rows = report.rows();
   while(rows.hasNext()) {
-    var row = rows.next();
-    var cost = row['CostPerConversion'];
+    var row     = rows.next();
+    var cost    = row['CostPerConversion'];
+    var adgroup = row['AdGroupName'];
+    
     if(parseFloat(cost) > 3*targetCPA )
       adgroupsOver.push(adgroup);
   }
   return adgroupsOver;
 }
 
+function costPerConversion7days() {
+  var overDuring7days = [];
+  
+   var report = AdWordsApp.report(
+      'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId' +
+      ' FROM ADGROUP_PERFORMANCE_REPORT'+
+      ' WHERE CostPerConversion > ' + 3*targetCPA +
+      ' DURING '+costxconv_short);
+  
+  var rows = report.rows();
+  while(rows.hasNext()){
+    var row     = rows.next();
+    var cost    = row['CostPerConversion'];
+    var adgroup = row['AdGroupName'];
+    
+    if(parseFloat(cost) > 3*targetCPA)
+      overDuring7days.push(adgroup)    
+  }
+  return overDuring7days;
+}
+
+function devicesPerAdgroup() {
+  var adgroups = costPerConversion7days();
+  
+  for(i in adgroups){
+    var report = AdWordsApp.report(
+      'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId, Device' +
+      ' FROM AUDIENCE_PERFORMANCE_REPORT'+
+      ' WHERE  AdGroupName = '+ adgroups[i] +
+      ' DURING '+costxconv_short);  
+    
+    var rows = report.rows();
+    while(rows.hasNext()){
+      var row = rows.next();
+      Logger.log(row['AdGroupName']+"  "+row['Device'])
+    }
+  }
+  
+  
+}
 
 function Bids() {
   //var camps = manualCPC();
   //adGroupsOverCPA();
-  var adGroups = costPerConversion();
-  for(i in adGroups)
-    Logger.log(adGroups[i])
+  //var adGroups = costPerConversion();
+  //var over7days = costPerConversion7days();
+  devicesPerAdgroup();
 }
 
 function main() {  
