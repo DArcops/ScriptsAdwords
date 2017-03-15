@@ -27,6 +27,11 @@ var since_days = 200;
 var to_days =  199;
 var bad_code = 400;
 
+//VARIABLES FOR BIDS
+var targetCPA = 1000; //depending account update this variable
+var days_for_cost = 60;
+var costxconv = "LAST_7_DAYS"; //dateRange for cost per conversion query
+
  
 //Just for know wich campaigns are enable and then work with them.
 function fillActiveCampaigns(){
@@ -348,7 +353,6 @@ function oldETAAds() {
   endDate = Utilities.formatDate(endDate, AdWordsApp.currentAccount().getTimeZone(),"yyyyMMdd");
     
   var dateRange = startDate+','+endDate;
-  Logger.log(dateRange)
   
   var report = AdWordsApp.report(
       'SELECT Date,Id,AdGroupId,CampaignId,Conversions' +
@@ -392,12 +396,6 @@ function url404() {
       .withCondition("CampaignStatus = 'ENABLED'")
       .get()
   ];
-  /*AdWordsApp.ads()
-      .withCondition("Status = 'ENABLED'")
-      .withCondition("AdGroupStatus = 'ENABLED'")
-      .withCondition("CampaignStatus = 'ENABLED'")
-      .get().next().urls().getFinalUrl()*/
-  //Logger.log(iters[1].totalNumEntities());
   for(i in iters){
     var iter = iters[i];
     while(iter.hasNext()){
@@ -442,22 +440,55 @@ function Ads() {
 
 function activeSiteLinks() {
   var less4sitelinks = [];
-  AdWordsApp.campaigns().get().next().extensions().sitelinks().get().next().
+  var temp = [];
+  
   for(i in activeCampaigns){
     var curr_camp = activeCampaigns[i];
     var sitelinks = curr_camp.extensions().sitelinks().get();
     var count = 0;
+    if(sitelinks.totalNumEntities() == 0){
+      if(less4sitelinks.indexOf(curr_camp) == -1)
+        less4sitelinks.push(curr_camp);
+      continue;
+    }
     while(sitelinks.hasNext()){
       var sitelink = sitelinks.next();
-      var impressions = sitelink.getStatsFor("LAST_DAY").getImpressions();
-      Logger.log(sitelink.getLinkText()+"  "+impressions)
-      if(impressions <= 1)
+      var impressions_yes = sitelink.getStatsFor("YESTERDAY").getImpressions();
+      var impressions_tod = sitelink.getStatsFor("TODAY").getImpressions();
+      if(impressions_yes > 0 && impressions_tod > 0)
         count++;
     }
-    if(count < 4)
-      less4sitelinks.push(activeCampaigns[i]);
+    if(count < 4 )
+      if(less4sitelinks.indexOf(curr_camp) == -1)
+        less4sitelinks.push(curr_camp);
   }
   return less4sitelinks;
+}
+
+
+function activeCallouts() {
+  var inactive = [];
+  
+  for(i in activeCampaigns){  
+    var curr_camp = activeCampaigns[i];
+    var callouts = curr_camp.extensions().callouts().get();
+    var count = 0;
+    if(callouts.totalNumEntities() == 0){
+      if(inactive.indexOf(curr_camp) == -1)
+        inactive.push(curr_camp);
+      continue;
+    }
+    while(callouts.hasNext()){
+      var callout = callouts.next();
+      var impressions_yes = callout.getStatsFor("YESTERDAY");
+      var impressions_tod = callout.getStatsFor("TODAY");
+      if(impressions_yes > 0 && impressions_tod > 0)
+        count++;
+    }
+    if(count < 2)
+      inactive.push(curr_camp);
+  }
+  return inactive;
 }
 
 function siteLinksWODesc(){
@@ -487,9 +518,90 @@ function siteLinksWODesc(){
 
 function Extensions() {
  //var withoutDescription = siteLinksWODesc();
-  var active = activeSitelinks();
+ //var active = activeSiteLinks();
+  var activeCall = activeCallouts();
 }
 
+////////////////////////////////////////////////////////////////////////////// HERE FINISH EXTENSIONS FUNCTIONS AND START BID FUNCTIONS //////////////////////////////////////////////////
+
+function isBrand(name) {
+  if(name.indexOf("Brand") != -1 || name.indexOf("BRAND") != -1 || name.indexOf("brand") != -1)
+    return true;
+  return false;
+}
+
+function daysAgo() {
+  var startDate = new Date();
+  startDate.setDate(startDate.getDate() - days_for_cost);
+  startDate = Utilities.formatDate(startDate, AdWordsApp.currentAccount().getTimeZone(),"yyyyMMdd");
+  
+  var endDate = new Date();
+  var dateRange = startDate+','+endDate;
+  return dateRange;
+}
+
+function manualCPC() {
+  var campaignsManualCPC = [];
+    
+  for(i in activeCampaigns){
+    if(isBrand(activeCampaigns[i].getName()))
+      continue;
+    
+    var type = activeCampaigns[i].bidding().getStrategyType();
+    if(type == "MANUAL_CPC")
+      campaignsManualCPC.push(activeCampaigns[i].getName());
+  }
+  return campaignsManualCPC;
+}
+
+function adGroupsOverCPA() {
+  var over = [];
+  
+  for(i in activeCampaigns) {
+    if(isBrand(activeCampaigns[i].getName()))
+      continue;
+
+    var adGroups = activeCampaigns[i].adGroups()
+      .withCondition("Status = ENABLED")
+      .withCondition("Cost > "+3*targetCPA+'')
+      .withCondition("Impressions = 0")
+      .forDateRange("LAST_MONTH")
+      .get();
+    while(adGroups.hasNext()){
+      var adGroup = adGroups.next();
+      over.push(adGroup);    
+    }
+  }
+  return over;
+}
+
+function costPerConversion() {
+  var adgroupsOver = [];
+  
+  var report = AdWordsApp.report(
+      'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId' +
+      ' FROM ADGROUP_PERFORMANCE_REPORT'+
+      ' WHERE CostPerConversion > ' + 3*targetCPA +
+      ' DURING '+costxconv);
+  
+  var rows = report.rows();
+  while(rows.hasNext()) {
+    var row = rows.next();
+    var cost = row['CostPerConversion'];
+    if(parseFloat(cost) > 3*targetCPA )
+      adgroupsOver.push(adgroup);
+  }
+  return adgroupsOver;
+}
+
+
+function Bids() {
+  //var camps = manualCPC();
+  //adGroupsOverCPA();
+  var adGroups = costPerConversion();
+  for(i in adGroups)
+    Logger.log(adGroups[i])
+}
 
 function main() {  
    fillActiveCampaigns();
@@ -497,4 +609,5 @@ function main() {
    KeyWords();
    Ads();
    Extensions();
+   Bids();
 }
