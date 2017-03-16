@@ -532,6 +532,10 @@ function isBrand(name) {
   return false;
 }
 
+function cleanCost(cost) {
+  return cost.replace(/\,/g,'');
+}
+
 function daysAgo() {
   var startDate = new Date();
   startDate.setDate(startDate.getDate() - days_for_cost);
@@ -591,6 +595,7 @@ function costPerConversion() {
     var row     = rows.next();
     var cost    = row['CostPerConversion'];
     var adgroup = row['AdGroupName'];
+    cost = cleanCost(cost);
     
     if(parseFloat(cost) > 3*targetCPA )
       adgroupsOver.push(adgroup);
@@ -600,6 +605,7 @@ function costPerConversion() {
 
 function costPerConversion7days() {
   var overDuring7days = [];
+  var adGroupsIds = [];
   
    var report = AdWordsApp.report(
       'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId' +
@@ -609,34 +615,64 @@ function costPerConversion7days() {
   
   var rows = report.rows();
   while(rows.hasNext()){
+    
     var row     = rows.next();
     var cost    = row['CostPerConversion'];
     var adgroup = row['AdGroupName'];
-    
-    if(parseFloat(cost) > 3*targetCPA)
-      overDuring7days.push(adgroup)    
+    cost  = cleanCost(cost);
+  
+    if(parseFloat(cost) > 3*targetCPA){
+      overDuring7days.push(adgroup);
+      adGroupsIds.push(row['AdGroupId']);
+    }
   }
-  return overDuring7days;
+  var obj = {
+    adGroupNames : overDuring7days,
+    adGroupIds   : adGroupsIds,
+  }
+  return obj;
 }
 
 function devicesPerAdgroup() {
   var adgroups = costPerConversion7days();
-  
-  for(i in adgroups){
+  var data = {};
+  var adGroups = {};
+  for(i in adgroups.adGroupIds){
+    var id = adgroups.adGroupIds[i];
+    adGroups[id] = {}
+    
     var report = AdWordsApp.report(
-      'SELECT CostPerConversion, AdGroupName, AdGroupStatus, AdGroupId, Device' +
+      'SELECT CostPerConversion, AdGroupName, AdGroupId, Device' +
       ' FROM AUDIENCE_PERFORMANCE_REPORT'+
-      ' WHERE  AdGroupName = '+ adgroups[i] +
+      ' WHERE AdGroupId = ' + adgroups.adGroupIds[i] +
       ' DURING '+costxconv_short);  
     
     var rows = report.rows();
+    var ar = {};
+  
     while(rows.hasNext()){
       var row = rows.next();
-      Logger.log(row['AdGroupName']+"  "+row['Device'])
+      var deviceCount = adGroups[id][row['Device']]
+      deviceCount ? deviceCount++ : deviceCount = 1;
+      adGroups[id][row['Device']] = deviceCount;
     }
   }
-  
-  
+  return adGroups;
+}
+
+function geoCampaign() {
+  AdWordsApp.campaigns().get().next().ge
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var id = campaign.getId();
+    
+    var report = AdWordsApp.report(
+      'SELECT CostPerConversion, AdGroupName, AdGroupId, Device' +
+      ' FROM AUDIENCE_PERFORMANCE_REPORT'+
+      ' WHERE AdGroupId = ' + adgroups.adGroupIds[i] +
+      ' DURING '+costxconv_short);  
+    
+  }
 }
 
 function Bids() {
@@ -644,7 +680,8 @@ function Bids() {
   //adGroupsOverCPA();
   //var adGroups = costPerConversion();
   //var over7days = costPerConversion7days();
-  devicesPerAdgroup();
+  //var d = devicesPerAdgroup(); returns an object be careful manipulating it
+  geoCampaign();
 }
 
 function main() {  
