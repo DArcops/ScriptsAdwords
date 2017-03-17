@@ -678,12 +678,41 @@ function geoCampaign() {
       var row = rows.next();
       var cost = row['CostPerConversion'];
       cost = cleanCost(cost);
-      if(parseFloat(cost) > 100){
+      if(parseFloat(cost) > 3*targetCPA){
         countries.push(row['CityCriteriaId']);
       }
     }
   }
   return countries;
+}
+
+function genreCampaign() {
+  var obj = {};
+  
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var id  = campaign.getId();
+    
+    var report = AdWordsApp.report(
+      'SELECT CostPerConversion, CampaignId, Criteria' +
+      ' FROM GENDER_PERFORMANCE_REPORT'+
+      ' WHERE CampaignId = ' + id +
+      ' DURING '+costxconv_short);
+    
+    var rows = report.rows();
+    while(rows.hasNext()){
+      var row = rows.next();
+      var cost = row['CostPerConversion'];
+      cost = cleanCost(cost);
+      if(parseFloat(cost) > 3*targetCPA)
+        obj[row['Criteria']] ? obj[row['Criteria']]++ : obj[row['Criteria']] = 1;
+    }
+  }
+  return obj;
+}
+
+function daysOfWeek() {
+  
 }
 
 function Bids() {
@@ -692,7 +721,8 @@ function Bids() {
   //var adGroups = costPerConversion();
   //var over7days = costPerConversion7days();
   //var d = devicesPerAdgroup(); returns an object be careful manipulating it
-  var countries = geoCampaign();
+  //var countries = geoCampaign();
+  //var gender = genreCampaign();
 }
 
 function main() {  
