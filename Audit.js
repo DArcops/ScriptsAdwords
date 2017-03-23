@@ -49,16 +49,32 @@ function fillActiveCampaigns(){
 }
 
 ////////////////////////////////////////////////////////////////////////////// COMPUTE PERFORMANCE SETTINGS ///////////////////////////////////////////////////////
+function targetLocation(){
+  var type = [];
+  var locations = AdWordsApp.targeting().targetedLocations().get();
+  while(locations.hasNext()){
+    var location = locations.next();
+    var entity = location.getEntityType();
+    type.push(entity);
+  }
+}
+
+function deliveryMode() {
+  var deliveries = [];
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var budget = campaign.getBudget();
+    var delivery = budget.getDeliveryMethod();
+    deliveries.push(delivery);
+  }
+  return deliveries;
+}
+
 function Settings() { 
+   var types = targetLocation();
    var currentAccount = AdWordsApp.currentAccount();
    var stats = currentAccount.getStatsFor(period);
-   var account = {
-     averageCPC : stats.getAverageCpc(),
-     averageCPM: stats.getAverageCpm(),
-     conversions: stats.getConversions(),
-     convRate: stats.getConversionRate(),
-   };
-  return account;
+   var deliveries = deliveryMode();   
 }
 
 function genericCampaign(name) {
@@ -527,7 +543,7 @@ function Extensions() {
 ////////////////////////////////////////////////////////////////////////////// HERE FINISH EXTENSIONS FUNCTIONS AND START BID FUNCTIONS //////////////////////////////////////////////////
 
 function isBrand(name) {
-  if(name.indexOf("Brand") != -1 || name.indexOf("BRAND") != -1 || name.indexOf("brand") != -1)
+  if(name.indexOf("Brand") != -1 || name.indexOf("BRAND") != -1 || name.indexOf("brand") != -1 || name.indexOf("Brn")!=-1 || name.indexOf("BRN")!=-1)
     return true;
   return false;
 }
@@ -704,14 +720,14 @@ function genreCampaign() {
       var row = rows.next();
       var cost = row['CostPerConversion'];
       cost = cleanCost(cost);
-      if(parseFloat(cost) > 3*targetCPA)
+      if(parseFloat(cost) > 100)
         obj[row['Criteria']] ? obj[row['Criteria']]++ : obj[row['Criteria']] = 1;
     }
   }
   return obj;
 }
 
-function daysOfWeek() {
+function daysOfTheWeek() {
   
 }
 
@@ -726,8 +742,9 @@ function Bids() {
 }
 
 function main() {  
+
    fillActiveCampaigns();
-  //Logger.log(Settings());  
+   Settings();  
    KeyWords();
    Ads();
    Extensions();
