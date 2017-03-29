@@ -33,6 +33,18 @@ var days_for_cost = 60;
 var costxconv_large = "LAST_MONTH"; //dateRange for cost per conversion query
 var costxconv_short = "LAST_7_DAYS"; //dateRange for cost per conversion query during last seven days
 
+//VARIABLES FOR GOOGLE SHEET
+var CONFIG = {
+  SPREADSHEET_URL: 'https://docs.google.com/spreadsheets/d/1Y0HVdUDtlFe9bDHkn3gDIsejqkQ5Ilg0ORzEqXZcUrs/edit#gid=0',
+  COPY_SPREADSHEET: false,
+  RECIPIENT_EMAILS: [
+    'epa.soriana@gmail.com'
+  ]  
+};
+
+var allData = {};
+
+///////////////////////////////////////////////////////////////////////////////////// END OF VARIBLES ////////////////////////////////////////////////////////////////
  
 //Just for know wich campaigns are enable and then work with them.
 function fillActiveCampaigns(){
@@ -45,36 +57,62 @@ function fillActiveCampaigns(){
     //here if the name of the campaign match in any part with "Brand" string , I assume that it's a brand campaign
     if((campaign.getName().indexOf("Brand") != -1) || (campaign.getName().indexOf("BRAND") != -1))
       brandCampaigns.push(campaign);
+    allData[campaign.getName()] = {};
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////// COMPUTE PERFORMANCE SETTINGS ///////////////////////////////////////////////////////
-function targetLocation(){
+function targetLocation(Campaign){
   var type = [];
-  var locations = AdWordsApp.targeting().targetedLocations().get();
-  while(locations.hasNext()){
-    var location = locations.next();
-    var entity = location.getEntityType();
-    type.push(entity);
-  }
+
+    var campaign = Campaign.getName();
+    var locations = AdWordsApp.targeting().targetedLocations().withCondition('CampaignName = "'+campaign+'"').get();
+    if(locations.hasNext()){
+      var location = locations.next();
+      var entity = location.getEntityType();
+      var obj = {
+        campaign : campaign,
+        entity : entity,
+      };
+      type.push(obj);
+      entity == "TargetedLocation" ? allData[campaign]["targetLocation"] = "OK" :  allData[campaign]["targetLocation"] = "X";
+    }
+  
+  return type;
 }
 
-function deliveryMode() {
+function rotation(campaign) {
+ 
+  var rotation = campaign.getAdRotationType();
+  rotation == "CONVERSION_OPTIMIZE" ? allData[campaign.getName()]["rotation"] = "OK" :allData[campaign.getName()]["rotation"] = "X";
+
+}
+
+function deliveryMode(campaign) {
   var deliveries = [];
-  for(i in activeCampaigns){
-    var campaign = activeCampaigns[i];
-    var budget = campaign.getBudget();
-    var delivery = budget.getDeliveryMethod();
-    deliveries.push(delivery);
-  }
+  
+  var budget = campaign.getBudget();
+  var delivery = budget.getDeliveryMethod();
+  
+  delivery == "Accelerated" ? allData[campaign.getName()]["delivery"] = "OK" :allData[campaign.getName()]["delivery"] = "X";
+  deliveries.push(delivery);
+  
   return deliveries;
 }
 
+function languages(campaign) {
+  allData[campaign.getName()]["languages"] = "-";
+}
+
 function Settings() { 
-   var types = targetLocation();
-   var currentAccount = AdWordsApp.currentAccount();
-   var stats = currentAccount.getStatsFor(period);
-   var deliveries = deliveryMode();   
+  for(i in activeCampaigns){
+     var current = activeCampaigns[i] ;
+     var types = targetLocation(current); 
+     rotation(current);
+     var deliveries = deliveryMode(current);
+     languages(current);
+  }
+
 }
 
 function genericCampaign(name) {
@@ -105,11 +143,9 @@ function cleanKw(kw) {
 }
 
 //Inspect if the keyword has the correct structure for broad concordance
-function noPlusKw(){
-   wrongKW = [];
-  
-  for(var i = 0 ; i < activeCampaigns.length ; i++){
-    var keywords = activeCampaigns[i].keywords()
+function noPlusKw(campaign){
+  var wrongKW = [];
+    var keywords = campaign.keywords()
     .withCondition("Status = ENABLED")
     .withCondition("KeywordMatchType = BROAD")
     .get();
@@ -122,27 +158,36 @@ function noPlusKw(){
           adGroup :  kw.getAdGroup(),
           text : kw.getText(),
         };
+        allData[campaign.getName()]["badConcordance"] = "X";
         wrongKW.push(wg);
       }
     }
-  }
+  
+    if(allData[campaign.getName()]["brandQS"] != "X")
+       allData[campaign.getName()]["brandQS"] = "OK";
+
   return wrongKW;
 }
 
-function kwQStatus(){
+function kwQStatus(campaign){
   var report = AdWordsApp.report(
     'SELECT Criteria, CampaignName, AdGroupName, QualityScore, SearchPredictedCtr, CreativeQualityScore, PostClickQualityScore ' +
     'FROM   KEYWORDS_PERFORMANCE_REPORT ' +
     'WHERE  Impressions > 25 ' +
-    'DURING '+period,{apiVersion: 'v201605'});
+    'AND CampaignName = ' + campaign.getName() +
+    ' DURING '+period,{apiVersion: 'v201605'});
 
   var rows = report.rows();
   while(rows.hasNext()) {
     var row = rows.next();
+    var QS = row['QualityScore'];
     var expCTR = row['SearchPredictedCtr'];
     var adRelevance = row['CreativeQualityScore'];
     var landingRelevance = row['PostClickQualityScore'];
     var isGeneric =  genericCampaign(row['CampaignName']);
+    
+    if(parseFloat(QS) > 1.0)
+      Logger.log(QS);
     
     if((expCTR == "Below average" || expCTR == "Average") && isGeneric){
       var kw = {
@@ -175,24 +220,27 @@ function kwQStatus(){
 }
 
 //keywords of brand campaigns with QS < 9
-function brandKWQS(){
+function brandKWQS(campaign){
   var qslessnine = [];
-  for(var i = 0; i < brandCampaigns.length ; i++) {
-   var kws = brandCampaigns[i].keywords().get(); 
+
+   var kws = campaign.keywords().get(); 
     while(kws.hasNext()){
       var kw = kws.next();
       var qs = kw.getQualityScore();
       if(qs < lowestQS){
         var kwless = {
-          campaign : brandCampaigns[i].getName(),
+          campaign : campaign.getName(),
           adGroup : kw.getAdGroup(),
           text : kw.getText(),
           QS: qs,
         };
+        allData[campaign.getName()]["brandQS"] = "X";
         qslessnine.push(kwless);
       }
     }
-  }
+    if(allData[campaign.getName()]["brandQS"] != "X")
+      allData[campaign.getName()]["brandQS"] = "OK";
+
   return qslessnine;
 }
 
@@ -322,7 +370,14 @@ function repeatedKeywords() {
 
 //Function that reports keywords and QS perfomance, and handler for all keywords data
 function KeyWords() {
-  //var kwBroad = noPlusKw();  commented cause is too long in execution
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var a = noPlusKw(campaign)
+    if(isBrand(campaign.getName()))
+     var b = brandKWQS(campaign); 
+    else
+      allData[campaign.getName()]["brandQS"] = "N/A";
+  }
   //var kwlessQS = brandKWQS();
   //kwQStatus(); //fills qsStatus array
   //var woNegatives = withOutNegatives();
@@ -683,6 +738,9 @@ function geoCampaign() {
     var campaign = activeCampaigns[i];
     var id = campaign.getId();
     
+    if(isBrand(campaign.getName()))
+      continue;
+    
     var report = AdWordsApp.report(
       'SELECT CostPerConversion, CampaignId, CityCriteriaId, CountryCriteriaId' +
       ' FROM GEO_PERFORMANCE_REPORT'+
@@ -709,6 +767,9 @@ function genreCampaign() {
     var campaign = activeCampaigns[i];
     var id  = campaign.getId();
     
+    if(isBrand(campaign.getName()))
+      continue;
+    
     var report = AdWordsApp.report(
       'SELECT CostPerConversion, CampaignId, Criteria' +
       ' FROM GENDER_PERFORMANCE_REPORT'+
@@ -720,7 +781,7 @@ function genreCampaign() {
       var row = rows.next();
       var cost = row['CostPerConversion'];
       cost = cleanCost(cost);
-      if(parseFloat(cost) > 100)
+      if(parseFloat(cost) > 3*targetCPA)
         obj[row['Criteria']] ? obj[row['Criteria']]++ : obj[row['Criteria']] = 1;
     }
   }
@@ -728,8 +789,74 @@ function genreCampaign() {
 }
 
 function daysOfTheWeek() {
-  
+  var response = [];
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var id = campaign.getId();
+    
+    if(isBrand(campaign.getName()))
+      continue;
+    
+     var report = AdWordsApp.report(
+      'SELECT CostPerConversion, CampaignId, DayOfWeek' +
+      ' FROM CAMPAIGN_PERFORMANCE_REPORT'+
+      ' WHERE CampaignId = ' + id +
+      ' DURING '+costxconv_short);
+    
+    var rows = report.rows();
+    var daysof = [];
+    while(rows.hasNext()){
+      var row = rows.next();
+      var cost = row['CostPerConversion'];
+      cost = cleanCost(cost);
+      if(parseFloat(cost) > 3*targetCPA)
+        daysof.push(row['DayOfWeek']);
+    }
+    Logger.log(daysof)
+    var obj = {
+      campaign : campaign.getName(),
+      days : daysof,
+    };
+    response.push(obj);
+  }
+  return response;
 }
+
+
+function hoursOfDay() {
+  var response = [];
+  
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    var id = campaign.getId();
+    
+    if(isBrand(campaign.getName()))
+      continue;
+    
+    var report = AdWordsApp.report(
+     'SELECT CostPerConversion, CampaignId, HourOfDay' +
+     ' FROM CAMPAIGN_PERFORMANCE_REPORT'+
+     ' WHERE CampaignId = ' + id +
+     ' DURING '+costxconv_short);
+    
+    var rows = report.rows();
+    var hours = [];
+    while(rows.hasNext()){
+      var row = rows.next();
+      var cost = row['CostPerConversion'];
+      cost = cleanCost(cost);
+      if(parseFloat(cost) > 3*targetCPA)
+        hours.push(row['HourOfDay']);
+    }
+    var obj = {
+      campaign : campaign.getName(),
+      hours : hours,
+    };
+    response.push(obj);
+  }
+  return response;
+}
+
 
 function Bids() {
   //var camps = manualCPC();
@@ -739,14 +866,117 @@ function Bids() {
   //var d = devicesPerAdgroup(); returns an object be careful manipulating it
   //var countries = geoCampaign();
   //var gender = genreCampaign();
+  //var a = daysOfTheWeek();
+  //var d = hoursOfDay();
 }
 
-function main() {  
+//////////////////////////////////////////////////////////////////////////////////////     HERE FINISH BIDS FUNCTIONS ////////////////////////////////////////////////
 
+
+function writeHeaders(s) {
+  var headers = ['','SETTINGS','KEYWORDS & QS','ADS','EXTENSIONS','BIDS'];
+  var columns = [3,4,10,2,4,9];
+ 
+  var last = 1;
+  var sheet = s.getSheetByName("general");
+  for(var i = 0; i < headers.length ; i++){
+     var range = sheet.getRange(1,last,1,parseInt(columns[i]));
+     last += columns[i];
+     range.setValue(headers[i]).mergeAcross().setHorizontalAlignment("center").setFontSize(14);
+  }
+  var r = sheet.getRange(2,1,1,3);
+  r.setValue("CAMPAIGN NAME").mergeAcross().setHorizontalAlignment("center").setFontSize(14);
+}
+
+function writeSecondHeaders(s) {
+  var headers = {
+    settings : ['Target Location','Rotation','Delivery(acelerated)','languages'],
+    keywords : ['concod.(+)','QS<9','QS below avg','QS avg','adRelevance below avg',
+               'adRelevance avg','quality landing below avg','adgroups sin neg','serch terms and no exact'],
+    ads : ['AG less 2 adds active','old ads','ads 404'],
+    extensions : ['less 4 sitelinks active','brand less 4 SL active','less 2 callouts active','SL sin descrp.'],
+    bids : ['cpc manual','AG costo > 3xCPAobj sin conv','AG cost/conv > 3xCPAobj','device per AG cost/conv > 3XCPA',
+           'ubicaciones per camp cost/conv > 3xCPAobj','generos per camp cost/conv > 3xCPAobj',
+            'days per camp cost/conv > 3xCPAobj','hours per camp cost/conv > 3xCPA'],
+  };
+  var col = 4;
+  var sheet = s.getSheetByName("general");
+  for(k in headers){
+    for(var i = 0; i < headers[k].length; i++){
+      var range = sheet.getRange(2,col);
+      var value = headers[k][i];
+      range.setValue(value).setHorizontalAlignment('center');
+      col++;
+    }
+  }
+}
+
+function clearContent(s) {
+  var sheets = s.getSheets();
+  for(i in sheets){
+    var sheet = sheets[i];
+    sheet.clear();
+  }
+}
+
+function fillObj(obj,fields) {
+  
+}
+
+function formatData(s) {
+  var sheet =  s.getSheetByName("general");
+  var fields = sheet.getRange(2,4,1,30).getValues();
+  
+  for(i in activeCampaigns){
+    allData[activeCampaigns[i]] = {};
+    fillObj(allData[activeCampaigns[i]], fields);
+  }
+}
+
+
+function initSpreadsheet() {
+  var spreadsheet = SpreadsheetApp.openByUrl(CONFIG.SPREADSHEET_URL);
+  
+  if (CONFIG.COPY_SPREADSHEET) 
+    spreadsheet = spreadsheet.copy('Audit Script');
+  
+  clearContent(spreadsheet);
+  
+  writeHeaders(spreadsheet);
+  
+  writeSecondHeaders(spreadsheet);
+  formatData(spreadsheet);
+  return spreadsheet;
+}
+
+function writeDataGeneral(s) {
+  var sheet = s.getSheetByName("general");
+  var row = 3;
+ 
+  for(k in allData){
+    var range = sheet.getRange(row,1,1,3);
+    var column = 4;
+    range.setValue(k).mergeAcross().setHorizontalAlignment('center');
+    Logger.log(k)
+    for(kk in allData[k]){
+        Logger.log(kk+" : "+allData[k][kk])
+        var r = sheet.getRange(row,column);
+        r.setValue(allData[k][kk]).setHorizontalAlignment('center');
+        column++;
+    }
+    row++;
+  }
+  
+}
+  
+function main() {  
    fillActiveCampaigns();
-   Settings();  
+   var settingsData = Settings();  
    KeyWords();
-   Ads();
+   /*Ads();
    Extensions();
-   Bids();
+   Bids();**/
+   var spreadsheet = initSpreadsheet();
+   writeDataGeneral(spreadsheet);
+  
 }
