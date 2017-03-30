@@ -149,7 +149,10 @@ function noPlusKw(campaign){
     .withCondition("Status = ENABLED")
     .withCondition("KeywordMatchType = BROAD")
     .get();
-    
+  
+    if(keywords.totalNumEntities() == 0)
+      allData[campaign.getName()]["badConcordance"] = "X";
+      
     while(keywords.hasNext()){
       var kw = keywords.next();
       if( checkPlus(kw.getText()) ){
@@ -162,9 +165,9 @@ function noPlusKw(campaign){
         wrongKW.push(wg);
       }
     }
-  
-    if(allData[campaign.getName()]["brandQS"] != "X")
-       allData[campaign.getName()]["brandQS"] = "OK";
+   
+    if(allData[campaign.getName()]["badConcordance"] != "X")
+       allData[campaign.getName()]["badConcordance"] = "OK";
 
   return wrongKW;
 }
@@ -174,49 +177,80 @@ function kwQStatus(campaign){
     'SELECT Criteria, CampaignName, AdGroupName, QualityScore, SearchPredictedCtr, CreativeQualityScore, PostClickQualityScore ' +
     'FROM   KEYWORDS_PERFORMANCE_REPORT ' +
     'WHERE  Impressions > 25 ' +
-    'AND CampaignName = ' + campaign.getName() +
-    ' DURING '+period,{apiVersion: 'v201605'});
+    ' DURING '+period);
 
   var rows = report.rows();
+  allData[campaign.getName()]["QSBelow"] = 0;
+  allData[campaign.getName()]["QSAverage"] = 0;
+  allData[campaign.getName()]["QSAdBelow"] = 0;
+  allData[campaign.getName()]["QSAdAverage"] = 0;
+  allData[campaign.getName()]["QSLandingBelow"] = 0;
+  
   while(rows.hasNext()) {
     var row = rows.next();
+    
+    if(row['CampaignName'] != campaign.getName())
+      continue;
+    
     var QS = row['QualityScore'];
     var expCTR = row['SearchPredictedCtr'];
     var adRelevance = row['CreativeQualityScore'];
     var landingRelevance = row['PostClickQualityScore'];
-    var isGeneric =  genericCampaign(row['CampaignName']);
     
-    if(parseFloat(QS) > 1.0)
-      Logger.log(QS);
     
-    if((expCTR == "Below average" || expCTR == "Average") && isGeneric){
+    if(expCTR == "Below average"){
       var kw = {
         campaign : row['CampaignName'],
         adGroup : row['AdGroupName'],
         text : row['Criteria'],
         status : expCTR,
       }; 
+      allData[campaign.getName()]["QSBelow"] += 1;
+      Logger.log( allData[campaign.getName()]["QSBelow"])
       qsStatus.push(kw);
     }
-    if((adRelevance == "Below average" || adRelevance == "Average") && isGeneric){
+    if(expCTR == "Average"){
+      var kw = {
+        campaign : row['CampaignName'],
+        adGroup : row['AdGroupName'],
+        text : row['Criteria'],
+        status : expCTR,
+      }; 
+      allData[campaign.getName()]["QSAverage"] += 1;
+      qsStatus.push(kw);
+    }
+    if(adRelevance == "Below average"){
       var kw = {
         campaign : row['CampaignName'],
         adGroup : row['AdGroupName'],
         text : row['Criteria'],
         relevance : adRelevance,
       };
+      allData[campaign.getName()]["QSAdBelow"] += 1;
       kwRelevance.push(kw);
     }
-    if(landingRelevance == "Below average" && isGeneric){
+     if(adRelevance == "Average"){
+      var kw = {
+        campaign : row['CampaignName'],
+        adGroup : row['AdGroupName'],
+        text : row['Criteria'],
+        relevance : adRelevance,
+      };
+      allData[campaign.getName()]["QSAdAverage"] += 1;
+      kwRelevance.push(kw);
+    }
+    if(landingRelevance == "Below average"){
       var kw = {
         campaign : row['CampaignName'],
         adGroup : row['AdGroupName'],
         text : row['Criteria'],
         landingRelevance : landingRelevance,
       };
+      allData[campaign.getName()]["QSLandingBelow"] += 1;
       kwLandingRelevance.push(kw);
     }
   }
+  
 }
 
 //keywords of brand campaigns with QS < 9
@@ -244,13 +278,16 @@ function brandKWQS(campaign){
   return qslessnine;
 }
 
-function withOutNegatives() {
+function withOutNegatives(campaign) {
   var campsWONeg = [];
-  for(var i = 0; i < activeCampaigns.length; i++){
+    
+    allData[campaign.getName()]["Cmpsineg"] = "OK";
     var totalKws = activeCampaigns[i].negativeKeywords().get().totalNumEntities();
-    if(totalKws == 0)
+  if(totalKws == 0){
       campsWONeg.push(activeCampaigns[i].getName());
+    allData[campaign.getName()]["Cmpsineg"] = "X";
   }
+  
   return campsWONeg;
 }
 
@@ -285,50 +322,61 @@ function ExactKws() {
   }
 }
 
-function searchTerms() {
+function searchTerms(campaign) {
    var shouldBe = [];
    ExactKws();
+   
+   allData[campaign.getName()]["SearchNoNoNegative"] = 0;
   
    var report = AdWordsApp.report(
-      'SELECT Query, Clicks, Cost, Ctr, ConversionRate,' +
-      ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
+      'SELECT Query, Conversions, CampaignId' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE ' +' Conversions > 0' +
+      ' AND CampaignId = '+campaign.getId()+
       ' AND Impressions > ' + almostImpressions +'');
   
   var rows = report.rows();
+
   while(rows.hasNext()) {
     var row = rows.next();
     var query = row['Query'];
-    if(exactKws.indexOf(query) == -1 && shouldBe.indexOf(query) == -1)
+    if(exactKws.indexOf(query) == -1 && shouldBe.indexOf(query) == -1){
       shouldBe.push(query);
+      allData[campaign.getName()]["SearchNoNoNegative"] += 1;
+    }
   }
+  
   return shouldBe;
 }
 
-function searchTermsClicks() {
+function searchTermsClicks(campaign) {
   var noExactKws = [];
       
   var report = AdWordsApp.report(
-      'SELECT Query, Clicks, Cost, Ctr, ConversionRate,' +
-      ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
+      'SELECT Query, Clicks, CampaignId, Ctr' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE Clicks > 10' +
+      ' AND CampaignId = '+campaign.getId()+
       ' AND Impressions > ' + almostImpressions +
-      ' DURING '+monthPeriod,{apiVersion: 'v201605'});
+      ' DURING '+monthPeriod);
+  
+  allData[campaign.getName()]["SearchTerms>10"] = 0;
   
   var rows = report.rows();
   while(rows.hasNext()) {
     var row = rows.next();
     var query = row['Query'];
-    if(parseFloat(row['Ctr']) > 10 && exactKws.indexOf(query) == -1 && noExactKws.indexOf(query) == -1)
+    //Logger.log(campaign.getName()+" "+query+"   "+row['Clicks']+"   "+parseFloat(row['Ctr']))
+    if(parseFloat(row['Ctr']) > 10 && exactKws.indexOf(query) == -1 && noExactKws.indexOf(query) == -1){
       noExactKws.push(query);
+       allData[campaign.getName()]["SearchTerms>10"] += 1;
+    }
   }
   return noExactKws;
 }
 
 
-function searchTermsNegatives() {
+function searchTermsNegatives(campaign) {
   var shouldBeNegatives = [];
   negatives();
   
@@ -337,7 +385,10 @@ function searchTermsNegatives() {
       ' CostPerConversion, Conversions, CampaignId, AdGroupId' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE Impressions > 200' +
-      ' DURING '+monthPeriod,{apiVersion: 'v201605'});
+      ' AND CampaignId = '+campaign.getId()+
+      ' DURING '+monthPeriod);
+  
+  allData[campaign.getName()]["searchTerms<1"] = 0;
   
   var rows = report.rows();
   while(rows.hasNext()) {
@@ -345,6 +396,7 @@ function searchTermsNegatives() {
     var query = row['Query'];
     if(negativesKw.indexOf(query) == -1 && shouldBeNegatives.indexOf(query) == -1 && parseFloat(row['Ctr']) < 1)
       shouldBeNegatives.push(query);
+      allData[campaign.getName()]["searchTerms<1"] += 1;
   }
   return shouldBeNegatives;
 }
@@ -371,31 +423,53 @@ function repeatedKeywords() {
 //Function that reports keywords and QS perfomance, and handler for all keywords data
 function KeyWords() {
   for(i in activeCampaigns){
+    
     var campaign = activeCampaigns[i];
     var a = noPlusKw(campaign)
+    
     if(isBrand(campaign.getName()))
      var b = brandKWQS(campaign); 
     else
       allData[campaign.getName()]["brandQS"] = "N/A";
+    
+    if(genericCampaign(campaign.getName()))
+      kwQStatus(campaign)
+    else{
+      allData[campaign.getName()]["QSBelow"] = "N/A";
+      allData[campaign.getName()]["QSAverage"] = "N/A";
+      allData[campaign.getName()]["QSAdBelow"] = "N/A";
+      allData[campaign.getName()]["QSAdAverage"] = "N/A";
+      allData[campaign.getName()]["QSLandingBelow"] = "N/A";
+    }
+    
+    withOutNegatives(campaign);
+    
+    searchTerms(campaign);
+    
+    searchTermsClicks(campaign);
+    
+    searchTermsNegatives(campaign);
   }
-  //var kwlessQS = brandKWQS();
-  //kwQStatus(); //fills qsStatus array
-  //var woNegatives = withOutNegatives();
-  //var shouldBeInExact = searchTerms();    
-  //var noExactKws = searchTermsClicks();
-  //var shouldbeNegatives = searchTermsNegatives();
+  
+  //var woNegatives = 
+  //var shouldBeInExact =     
+  //var noExactKws = 
+  //var shouldbeNegatives = 
   //var repeated = repeatedKeywords();
 }
 
 ////////////////////////////////////////////////////////////////////////// HERE FINISH KEYWORDS DATA AND START ADS DATA ////////////////////////////////////////////////////////////////////
 
-function lessTwo() {
+function lessTwo(campaign) {
    var adGroups = [];
  
-  for(i in activeCampaigns) {
-    if(activeCampaigns[i].getName() == "AW_DO_SEM_MPNs")
+  
+    if(campaign.getName() == "AW_DO_SEM_MPNs")
       continue;
-    var adgroups = activeCampaigns[i].adGroups().get();
+  
+    allData[campaign.getName()]["less2ads"] = 0;
+  
+    var adgroups = campaign.adGroups().get();
     while(adgroups.hasNext()) {
       var adg = adgroups.next();
       var ads = adg.ads()
@@ -403,14 +477,15 @@ function lessTwo() {
         .get()
       if(ads.totalNumEntities() < 2) {
         var adgroup = {
-          campaign : activeCampaigns[i].getName(),
+          campaign : campaign.getName(),
           adGroup : adg.getName(),
           ads : ads.totalNumEntities(),
         };
         adGroups.push(adgroup)
+        allData[campaign.getName()]["less2ads"] += 1;
       }
     }
-  }
+
   return adGroups;  
 }
 
@@ -504,7 +579,11 @@ function url404() {
 }
 
 function Ads() {
-  //var lessTwoAds = lessTwo();
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    lessTwo(campaign); 
+  }
+  //var lessTwoAds = 
   //var oldAds = oldETAAds();
   //var invalidUrls = url404();
 }
@@ -875,7 +954,7 @@ function Bids() {
 
 function writeHeaders(s) {
   var headers = ['','SETTINGS','KEYWORDS & QS','ADS','EXTENSIONS','BIDS'];
-  var columns = [3,4,10,2,4,9];
+  var columns = [3,4,11,2,4,9];
  
   var last = 1;
   var sheet = s.getSheetByName("general");
@@ -892,7 +971,8 @@ function writeSecondHeaders(s) {
   var headers = {
     settings : ['Target Location','Rotation','Delivery(acelerated)','languages'],
     keywords : ['concod.(+)','QS<9','QS below avg','QS avg','adRelevance below avg',
-               'adRelevance avg','quality landing below avg','adgroups sin neg','serch terms and no exact'],
+               'adRelevance avg','quality landing below avg','campsñas sin neg','serch terms and no exact','searchTerm CTR > 10%, Clicks > 10',
+               'searchTerms con CTR < 1%, Impr > 200 '],
     ads : ['AG less 2 adds active','old ads','ads 404'],
     extensions : ['less 4 sitelinks active','brand less 4 SL active','less 2 callouts active','SL sin descrp.'],
     bids : ['cpc manual','AG costo > 3xCPAobj sin conv','AG cost/conv > 3xCPAobj','device per AG cost/conv > 3XCPA',
@@ -957,9 +1037,8 @@ function writeDataGeneral(s) {
     var range = sheet.getRange(row,1,1,3);
     var column = 4;
     range.setValue(k).mergeAcross().setHorizontalAlignment('center');
-    Logger.log(k)
+   
     for(kk in allData[k]){
-        Logger.log(kk+" : "+allData[k][kk])
         var r = sheet.getRange(row,column);
         r.setValue(allData[k][kk]).setHorizontalAlignment('center');
         column++;
