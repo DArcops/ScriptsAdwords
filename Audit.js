@@ -460,16 +460,14 @@ function KeyWords() {
 
 ////////////////////////////////////////////////////////////////////////// HERE FINISH KEYWORDS DATA AND START ADS DATA ////////////////////////////////////////////////////////////////////
 
-function lessTwo(campaign) {
+function lessTwoActiveAds(campaign) {
    var adGroups = [];
  
   
     if(campaign.getName() == "AW_DO_SEM_MPNs")
-      continue;
+      return;
   
-    allData[campaign.getName()]["less2ads"] = 0;
-  
-    var adgroups = campaign.adGroups().get();
+    var adgroups = campaign.adGroups().withCondition('Status = ENABLED').get();
     while(adgroups.hasNext()) {
       var adg = adgroups.next();
       var ads = adg.ads()
@@ -481,15 +479,16 @@ function lessTwo(campaign) {
           adGroup : adg.getName(),
           ads : ads.totalNumEntities(),
         };
-        adGroups.push(adgroup)
-        allData[campaign.getName()]["less2ads"] += 1;
+        adGroups.push(adgroup);
       }
     }
-
+    allData[campaign.getName()]["less2ads"] = adGroups.length;
+   
   return adGroups;  
 }
 
-function oldETAAds() {
+//anuncios con mas de 200 dias activos
+function oldETAAds(campaign) {
   var oldAds = [];
   var startDate = new Date();
   startDate.setDate(startDate.getDate() - since_days);
@@ -505,33 +504,28 @@ function oldETAAds() {
       'SELECT Date,Id,AdGroupId,CampaignId,Conversions' +
       ' FROM AD_PERFORMANCE_REPORT' +
       ' WHERE Impressions > 20' +
-      ' DURING '+dateRange,{apiVersion: 'v201605'});
+      ' AND CampaignId = '+campaign.getId()+
+      ' DURING '+dateRange);
   
   var rows = report.rows();
   while(rows.hasNext()){
     var row = rows.next();
-    
-    var campaign = AdWordsApp.campaigns()
-      .withIds([row['CampaignId']])
-      .withCondition('Status = ENABLED')
-      .get();
-    
-    if(campaign.totalNumEntities() > 0){
-      var camp = campaign.next();
-      var ids = [[row['AdGroupId'],row['Id']]];
-      var ads = camp.ads().withIds(ids).get().next();
-      var  ad = {
-        title : ads.getHeadline(),
-        adGroup : ads.getAdGroup(),
-        campaign : camp.getName(),
-      };
-      oldAds.push(ad);
-    }
+
+    var ids = [[row['AdGroupId'],row['Id']]]; 
+    var ads = campaign.ads().withIds(ids).get().next();
+    var  ad = {
+      title : ads.getHeadline(),
+      adGroup : ads.getAdGroup(),
+      campaign : campaign.getName(),
+     };
+     oldAds.push(ad);
+
   }
+  allData[campaign.getName()]["oldAds"] = oldAds.length;
   return oldAds;
 }
 
-function url404() {
+function url404(campaign) {
   var badUrls  = [];
   var checked  = [];
   var badCodes = [];
@@ -560,7 +554,6 @@ function url404() {
       var response_code;
       try{
         response_code = UrlFetchApp.fetch(url).getResponseCode();
-        Logger.log(response_code);
       }catch(e){
         
         badUrls.push({e:entity,code: response_code});
@@ -575,33 +568,38 @@ function url404() {
     badUrls : badUrls,
     badCodes: badCodes,
   };
+  allData[campaign.getName()]["ads404"] = badUrls.length;
   return res;
 }
 
 function Ads() {
   for(i in activeCampaigns){
     var campaign = activeCampaigns[i];
-    lessTwo(campaign); 
+    lessTwoActiveAds(campaign); 
+    oldETAAds(campaign);
+    url404(campaign);
   }
   //var lessTwoAds = 
-  //var oldAds = oldETAAds();
-  //var invalidUrls = url404();
+  //var oldAds = 
+  //var invalidUrls = 
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////  HERE FINISH ADS AND START EXTENSIONS PERFORMANCE REPORT   ///////////////////////////////
 
-function activeSiteLinks() {
+function activeSiteLinks(campaign) {
   var less4sitelinks = [];
   var temp = [];
   
-  for(i in activeCampaigns){
-    var curr_camp = activeCampaigns[i];
-    var sitelinks = curr_camp.extensions().sitelinks().get();
+   allData[campaign.getName()]["less4sitelinks"] = 0;
+  
+    var sitelinks = campaign.extensions().sitelinks().get();
     var count = 0;
     if(sitelinks.totalNumEntities() == 0){
-      if(less4sitelinks.indexOf(curr_camp) == -1)
-        less4sitelinks.push(curr_camp);
-      continue;
+      if(less4sitelinks.indexOf(campaign) == -1){
+        less4sitelinks.push(campaign);
+         allData[campaign.getName()]["less4sitelinks"] = less4sitelinks.length;
+      }
+      return;
     }
     while(sitelinks.hasNext()){
       var sitelink = sitelinks.next();
@@ -611,24 +609,26 @@ function activeSiteLinks() {
         count++;
     }
     if(count < 4 )
-      if(less4sitelinks.indexOf(curr_camp) == -1)
-        less4sitelinks.push(curr_camp);
-  }
+      if(less4sitelinks.indexOf(campaign) == -1)
+        less4sitelinks.push(campaign);
+    Logger.log(campaign.getName())
+    allData[campaign.getName()]["less4sitelinks"] = less4sitelinks.length;
   return less4sitelinks;
 }
 
 
-function activeCallouts() {
+function activeCallouts2(campaign) {
   var inactive = [];
-  
-  for(i in activeCampaigns){  
-    var curr_camp = activeCampaigns[i];
-    var callouts = curr_camp.extensions().callouts().get();
+ 
+    var callouts = campaign.extensions().callouts().get();
+   
     var count = 0;
     if(callouts.totalNumEntities() == 0){
-      if(inactive.indexOf(curr_camp) == -1)
-        inactive.push(curr_camp);
-      continue;
+      if(inactive.indexOf(campaign) == -1){
+        inactive.push(campaign);
+        allData[campaign.getName()]["less2callouts"] = "X"; 
+      }
+      return;
     }
     while(callouts.hasNext()){
       var callout = callouts.next();
@@ -637,23 +637,25 @@ function activeCallouts() {
       if(impressions_yes > 0 && impressions_tod > 0)
         count++;
     }
-    if(count < 2)
-      inactive.push(curr_camp);
-  }
+  if(count < 2){
+      inactive.push(campaign);
+     allData[campaign.getName()]["less2callouts"] = "X";
+  }else
+    allData[campaign.getName()]["less2callouts"] = "OK";
+   
+
   return inactive;
 }
 
-function siteLinksWODesc(){
+function siteLinksWODesc(campaign){
   var withoutDesc = [];
   
-  for(i in activeCampaigns){
-    var curr_campaign = activeCampaigns[i];
-    var sitelinks = curr_campaign.extensions().sitelinks().get();
+    var sitelinks = campaign.extensions().sitelinks().get();
     while(sitelinks.hasNext()){
       var sitelink = sitelinks.next();
       var description1 = sitelink.getDescription1();
       var description2 = sitelink.getDescription2();
-      Logger.log(description1+"  "+description2);
+      
       if(description1 == null || description2 == null){
         var stL = {
           id : sitelink.getId(),
@@ -664,14 +666,18 @@ function siteLinksWODesc(){
         withoutDesc.push(stL);
       }
     }
-  }
+  allData[campaign.getName()]["SLsindesc"] = withoutDesc.length;
   return withoutDesc;
 }
 
 function Extensions() {
- //var withoutDescription = siteLinksWODesc();
- //var active = activeSiteLinks();
-  var activeCall = activeCallouts();
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    activeSiteLinks(campaign);
+    activeCallouts2(campaign);
+    siteLinksWODesc(campaign);
+  }
+
 }
 
 ////////////////////////////////////////////////////////////////////////////// HERE FINISH EXTENSIONS FUNCTIONS AND START BID FUNCTIONS //////////////////////////////////////////////////
@@ -696,28 +702,23 @@ function daysAgo() {
   return dateRange;
 }
 
-function manualCPC() {
+function manualCPC(campaign) {
   var campaignsManualCPC = [];
     
-  for(i in activeCampaigns){
-    if(isBrand(activeCampaigns[i].getName()))
-      continue;
-    
-    var type = activeCampaigns[i].bidding().getStrategyType();
-    if(type == "MANUAL_CPC")
-      campaignsManualCPC.push(activeCampaigns[i].getName());
-  }
+  var type = campaign.bidding().getStrategyType();
+  if(type == "MANUAL_CPC"){
+    campaignsManualCPC.push(campaign.getName());
+    allData[campaign.getName()]["manualCPC"] = "OK";  
+  }else
+    allData[campaign.getName()]["manualCPC"] = "X";
+
   return campaignsManualCPC;
 }
 
-function adGroupsOverCPA() {
+function adGroupsOverCPA(campaign) {
   var over = [];
   
-  for(i in activeCampaigns) {
-    if(isBrand(activeCampaigns[i].getName()))
-      continue;
-
-    var adGroups = activeCampaigns[i].adGroups()
+    var adGroups = campaign.adGroups()
       .withCondition("Status = ENABLED")
       .withCondition("Cost > "+3*targetCPA+'')
       .withCondition("Impressions = 0")
@@ -727,11 +728,12 @@ function adGroupsOverCPA() {
       var adGroup = adGroups.next();
       over.push(adGroup);    
     }
-  }
+    allData[campaign.getName()]["adGoverCPA"] = over.length;
+
   return over;
 }
 
-function costPerConversion() {
+function costPerConversion(campaign) {
   var adgroupsOver = [];
   
   var report = AdWordsApp.report(
@@ -750,10 +752,11 @@ function costPerConversion() {
     if(parseFloat(cost) > 3*targetCPA )
       adgroupsOver.push(adgroup);
   }
+  allData[campaign.getName()]["adGCostperConversion"] = adgroupsOver.length;
   return adgroupsOver;
 }
 
-function costPerConversion7days() {
+function costPerConversion7days(campaign) {
   var overDuring7days = [];
   var adGroupsIds = [];
   
@@ -780,6 +783,7 @@ function costPerConversion7days() {
     adGroupNames : overDuring7days,
     adGroupIds   : adGroupsIds,
   }
+  allData[campaign.getName()]["aGover7days"] = overDuring7days.length;
   return obj;
 }
 
@@ -810,15 +814,10 @@ function devicesPerAdgroup() {
   return adGroups;
 }
 
-function geoCampaign() {
+function geoCampaign(campaign) {
   var countries = [];
   
-  for(i in activeCampaigns){
-    var campaign = activeCampaigns[i];
     var id = campaign.getId();
-    
-    if(isBrand(campaign.getName()))
-      continue;
     
     var report = AdWordsApp.report(
       'SELECT CostPerConversion, CampaignId, CityCriteriaId, CountryCriteriaId' +
@@ -835,19 +834,15 @@ function geoCampaign() {
         countries.push(row['CityCriteriaId']);
       }
     }
-  }
+    allData[campaign.getName()]["locations"] = countries.length;
+
   return countries;
 }
 
-function genreCampaign() {
+function genreCampaign(campaign) {
   var obj = {};
-  
-  for(i in activeCampaigns){
-    var campaign = activeCampaigns[i];
+ 
     var id  = campaign.getId();
-    
-    if(isBrand(campaign.getName()))
-      continue;
     
     var report = AdWordsApp.report(
       'SELECT CostPerConversion, CampaignId, Criteria' +
@@ -863,18 +858,20 @@ function genreCampaign() {
       if(parseFloat(cost) > 3*targetCPA)
         obj[row['Criteria']] ? obj[row['Criteria']]++ : obj[row['Criteria']] = 1;
     }
-  }
+    Logger.log(obj)
+    var c=0;
+    for(k in obj)
+      c++;
+    allData[campaign.getName()]["generos"] = c;
+
   return obj;
 }
 
-function daysOfTheWeek() {
+function daysOfTheWeek(campaign) {
   var response = [];
-  for(i in activeCampaigns){
-    var campaign = activeCampaigns[i];
+ 
     var id = campaign.getId();
-    
-    if(isBrand(campaign.getName()))
-      continue;
+
     
      var report = AdWordsApp.report(
       'SELECT CostPerConversion, CampaignId, DayOfWeek' +
@@ -888,6 +885,7 @@ function daysOfTheWeek() {
       var row = rows.next();
       var cost = row['CostPerConversion'];
       cost = cleanCost(cost);
+      Logger.log(row['DayOfWeek']+"  "+cost);
       if(parseFloat(cost) > 3*targetCPA)
         daysof.push(row['DayOfWeek']);
     }
@@ -897,20 +895,16 @@ function daysOfTheWeek() {
       days : daysof,
     };
     response.push(obj);
-  }
+    allData[campaign.getName()]["daysofWeek"] = daysof.length;
+
   return response;
 }
 
 
-function hoursOfDay() {
+function hoursOfDay(campaign) {
   var response = [];
   
-  for(i in activeCampaigns){
-    var campaign = activeCampaigns[i];
     var id = campaign.getId();
-    
-    if(isBrand(campaign.getName()))
-      continue;
     
     var report = AdWordsApp.report(
      'SELECT CostPerConversion, CampaignId, HourOfDay' +
@@ -932,20 +926,35 @@ function hoursOfDay() {
       hours : hours,
     };
     response.push(obj);
-  }
+    allData[campaign.getName()]["hoursofDay"] = hours;
+
   return response;
 }
 
 
 function Bids() {
-  //var camps = manualCPC();
-  //adGroupsOverCPA();
-  //var adGroups = costPerConversion();
-  //var over7days = costPerConversion7days();
-  //var d = devicesPerAdgroup(); returns an object be careful manipulating it
-  //var countries = geoCampaign();
-  //var gender = genreCampaign();
-  //var a = daysOfTheWeek();
+  for(i in activeCampaigns){
+    var campaign = activeCampaigns[i];
+    if(isBrand(campaign.getName())){
+      allData[campaign.getName()]["manualCPC"] = "N/A";
+      allData[campaign.getName()]["adGoverCPA"] = "N/A";
+      allData[campaign.getName()]["adGCostperConversion"] = "N/A";
+      allData[campaign.getName()]["aGover7days"] = "N/A";
+      allData[campaign.getName()]["locations"] = "N/A";
+      allData[campaign.getName()]["generos"] = "N/A";
+      allData[campaign.getName()]["daysofWeek"] = "N/A";
+    }else{
+       manualCPC(campaign);  
+       adGroupsOverCPA(campaign);
+       costPerConversion(campaign);
+       costPerConversion7days(campaign);
+       geoCampaign(campaign);
+       genreCampaign(campaign); 
+       daysOfTheWeek(campaign);
+    }
+   
+  }
+   
   //var d = hoursOfDay();
 }
 
@@ -954,7 +963,7 @@ function Bids() {
 
 function writeHeaders(s) {
   var headers = ['','SETTINGS','KEYWORDS & QS','ADS','EXTENSIONS','BIDS'];
-  var columns = [3,4,11,2,4,9];
+  var columns = [3,4,11,3,3,9];
  
   var last = 1;
   var sheet = s.getSheetByName("general");
@@ -974,8 +983,8 @@ function writeSecondHeaders(s) {
                'adRelevance avg','quality landing below avg','campsñas sin neg','serch terms and no exact','searchTerm CTR > 10%, Clicks > 10',
                'searchTerms con CTR < 1%, Impr > 200 '],
     ads : ['AG less 2 adds active','old ads','ads 404'],
-    extensions : ['less 4 sitelinks active','brand less 4 SL active','less 2 callouts active','SL sin descrp.'],
-    bids : ['cpc manual','AG costo > 3xCPAobj sin conv','AG cost/conv > 3xCPAobj','device per AG cost/conv > 3XCPA',
+    extensions : ['less 4 sitelinks active','less 2 callouts active','SL sin descrp.'],
+    bids : ['cpc manual','AG costo > 3xCPAobj sin conv','AG cost/conv > 3xCPAobj','adgroups con Costo/Conv last 7 days',
            'ubicaciones per camp cost/conv > 3xCPAobj','generos per camp cost/conv > 3xCPAobj',
             'days per camp cost/conv > 3xCPAobj','hours per camp cost/conv > 3xCPA'],
   };
@@ -1037,7 +1046,7 @@ function writeDataGeneral(s) {
     var range = sheet.getRange(row,1,1,3);
     var column = 4;
     range.setValue(k).mergeAcross().setHorizontalAlignment('center');
-   
+
     for(kk in allData[k]){
         var r = sheet.getRange(row,column);
         r.setValue(allData[k][kk]).setHorizontalAlignment('center');
@@ -1052,9 +1061,9 @@ function main() {
    fillActiveCampaigns();
    var settingsData = Settings();  
    KeyWords();
-   /*Ads();
+   Ads();
    Extensions();
-   Bids();**/
+   Bids()
    var spreadsheet = initSpreadsheet();
    writeDataGeneral(spreadsheet);
   
