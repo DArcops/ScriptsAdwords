@@ -7,6 +7,9 @@
    
 */
 
+//QUALITY SCORE FACTOR VARIBALE
+var QSFactor = 3;
+
 //VARIABLES FOR KEYWORDS COMPUTE DATA
 var period = "LAST_7_DAYS";
 var monthPeriod = "LAST_MONTH";
@@ -63,53 +66,71 @@ function fillActiveCampaigns(){
 
 ////////////////////////////////////////////////////////////////////////////// COMPUTE PERFORMANCE SETTINGS ///////////////////////////////////////////////////////
 function targetLocation(Campaign){
-  var type = [];
-
-    var campaign = Campaign.getName();
-    var locations = AdWordsApp.targeting().targetedLocations().withCondition('CampaignName = "'+campaign+'"').get();
-    if(locations.hasNext()){
-      var location = locations.next();
-      var entity = location.getEntityType();
-      var obj = {
-        campaign : campaign,
-        entity : entity,
-      };
-      type.push(obj);
-      entity == "TargetedLocation" ? allData[campaign]["targetLocation"] = "OK" :  allData[campaign]["targetLocation"] = "X";
-    }
+  var data = [];
   
-  return type;
+  var campaign = Campaign.getName();
+  var locations = AdWordsApp.targeting().targetedLocations().withCondition('CampaignName = "'+campaign+'"').get();
+  if(locations.hasNext()){
+    var location = locations.next();
+    var entity = location.getEntityType();
+    data.push(entity);
+    entity == "TargetedLocation" ? allData[campaign]["targetLocation"] = "OK" :  allData[campaign]["targetLocation"] = "X";
+  }
+  var response = {
+    data : data,
+    adgroups : [],
+  };
+  
+  return response;
 }
 
 function rotation(campaign) {
- 
+  
   var rotation = campaign.getAdRotationType();
   rotation == "CONVERSION_OPTIMIZE" ? allData[campaign.getName()]["rotation"] = "OK" :allData[campaign.getName()]["rotation"] = "X";
-
+  var response = {
+    data : [rotation],
+    adgroups : [],
+  };
+  return response;
 }
 
 function deliveryMode(campaign) {
-  var deliveries = [];
   
   var budget = campaign.getBudget();
   var delivery = budget.getDeliveryMethod();
   
   delivery == "Accelerated" ? allData[campaign.getName()]["delivery"] = "OK" :allData[campaign.getName()]["delivery"] = "X";
-  deliveries.push(delivery);
   
-  return deliveries;
+  var response = {
+    data : [delivery],
+    adgroups : [],
+  };
+  return response;
 }
 
 function languages(campaign) {
   allData[campaign.getName()]["languages"] = "-";
 }
 
-function Settings() { 
+function Settings(s) { 
+  
+  var headers = ["Campaign","GEO","ROTATION","PUBLISH MODE"];
+  writeHds(s,headers);
+  
   for(i in activeCampaigns){
+    var obj = {};
+  obj["data"] = [];
+  obj["adgroups"] = [];
+    
      var current = activeCampaigns[i] ;
-     var types = targetLocation(current); 
-     rotation(current);
+     var loc = targetLocation(current);
+     obj.data = obj.data.concat(loc.data);
+     var rot = rotation(current);
+     obj.data = obj.data.concat(rot.data);
      var deliveries = deliveryMode(current);
+     obj.data = obj.data.concat(deliveries.data);
+     writeInSheet(s,current.getName(), obj)
      languages(current);
   }
 
@@ -145,31 +166,35 @@ function cleanKw(kw) {
 //Inspect if the keyword has the correct structure for broad concordance
 function noPlusKw(campaign){
   var wrongKW = [];
+  var adgroups = [];
+  
     var keywords = campaign.keywords()
     .withCondition("Status = ENABLED")
     .withCondition("KeywordMatchType = BROAD")
     .get();
-  
+    AdWordsApp.keywords().get().next().getAdGroup().getName()
     if(keywords.totalNumEntities() == 0)
       allData[campaign.getName()]["badConcordance"] = "X";
       
     while(keywords.hasNext()){
       var kw = keywords.next();
       if( checkPlus(kw.getText()) ){
-        var wg = {
-          campaign : activeCampaigns[i].getName(),
-          adGroup :  kw.getAdGroup(),
-          text : kw.getText(),
-        };
+        adgroups.push(kw.getAdGroup().getName());
+        wrongKW.push(kw.getText());
         allData[campaign.getName()]["badConcordance"] = "X";
-        wrongKW.push(wg);
+        
       }
     }
    
     if(allData[campaign.getName()]["badConcordance"] != "X")
        allData[campaign.getName()]["badConcordance"] = "OK";
+ 
+  var response = {
+    data : wrongKW,
+    adgroups : adgroups,
+  };
 
-  return wrongKW;
+  return response;
 }
 
 function kwQStatus(campaign){
@@ -307,7 +332,9 @@ function negatives() {
 
 
 function ExactKws() {
+  
   for(i in activeCampaigns){
+    
     var campaign = activeCampaigns[i];
     var kws = campaign.keywords()
     .withCondition("KeywordMatchType = EXACT")
@@ -421,14 +448,22 @@ function repeatedKeywords() {
 }
 
 //Function that reports keywords and QS perfomance, and handler for all keywords data
-function KeyWords() {
+function KeyWords(s) {
   for(i in activeCampaigns){
+    var obj = {};
+    obj["data"] = [];
+    obj["adgroups"] = [];
     
     var campaign = activeCampaigns[i];
-    var a = noPlusKw(campaign)
+    var a = noPlusKw(campaign);
+    obj.data = obj.concat(a.data);
+    obj.adgroups = obj.concat(a.adgroups);
     
-    if(isBrand(campaign.getName()))
+    if(isBrand(campaign.getName())){
      var b = brandKWQS(campaign); 
+     obj.data = obj.concat(b.data);
+     obj.adgroups = obj.concat(b.adgroups);
+    }
     else
       allData[campaign.getName()]["brandQS"] = "N/A";
     
@@ -926,7 +961,8 @@ function hoursOfDay(campaign) {
       hours : hours,
     };
     response.push(obj);
-    allData[campaign.getName()]["hoursofDay"] = hours;
+    allData[campaign.getName()]["hoursofDay"] = hours.length;
+    
 
   return response;
 }
@@ -943,6 +979,7 @@ function Bids() {
       allData[campaign.getName()]["locations"] = "N/A";
       allData[campaign.getName()]["generos"] = "N/A";
       allData[campaign.getName()]["daysofWeek"] = "N/A";
+      allData[campaign.getName()]["hoursofDay"] = "N/A";
     }else{
        manualCPC(campaign);  
        adGroupsOverCPA(campaign);
@@ -951,11 +988,12 @@ function Bids() {
        geoCampaign(campaign);
        genreCampaign(campaign); 
        daysOfTheWeek(campaign);
+       hoursOfDay(campaign);
     }
    
   }
    
-  //var d = hoursOfDay();
+  //var d = 
 }
 
 //////////////////////////////////////////////////////////////////////////////////////     HERE FINISH BIDS FUNCTIONS ////////////////////////////////////////////////
@@ -1012,16 +1050,6 @@ function fillObj(obj,fields) {
   
 }
 
-function formatData(s) {
-  var sheet =  s.getSheetByName("general");
-  var fields = sheet.getRange(2,4,1,30).getValues();
-  
-  for(i in activeCampaigns){
-    allData[activeCampaigns[i]] = {};
-    fillObj(allData[activeCampaigns[i]], fields);
-  }
-}
-
 
 function initSpreadsheet() {
   var spreadsheet = SpreadsheetApp.openByUrl(CONFIG.SPREADSHEET_URL);
@@ -1034,7 +1062,7 @@ function initSpreadsheet() {
   writeHeaders(spreadsheet);
   
   writeSecondHeaders(spreadsheet);
-  formatData(spreadsheet);
+
   return spreadsheet;
 }
 
@@ -1046,7 +1074,7 @@ function writeDataGeneral(s) {
     var range = sheet.getRange(row,1,1,3);
     var column = 4;
     range.setValue(k).mergeAcross().setHorizontalAlignment('center');
-
+ 
     for(kk in allData[k]){
         var r = sheet.getRange(row,column);
         r.setValue(allData[k][kk]).setHorizontalAlignment('center');
@@ -1054,17 +1082,36 @@ function writeDataGeneral(s) {
     }
     row++;
   }
-  
+}
+
+function writeInSheet(s, campaign, obj) {
+  var row = s.getLastRow()+1;
+  var r = s.getRange(row,1);
+  var values = [obj.data];
+  r.setValue(campaign).setHorizontalAlignment('center').setWrap(true);
+  r = s.getRange(row,2,1,obj.data.length);
+  r.setValues(values);
+}
+
+function writeHds(s,h) {
+  var row = s.getLastRow()+2;
+  Logger.log(row)
+  for(var i=0; i <  h.length; i++){
+    var r = s.getRange(row,i+1);
+    r.setValue(h[i]).setFontSize(14).setHorizontalAlignment('center');
+  }
+    
 }
   
 function main() {  
    fillActiveCampaigns();
-   var settingsData = Settings();  
+   var spreadsheet = initSpreadsheet();
+   var sheet = spreadsheet.getSheetByName("settings");
+   Settings(sheet);  
    KeyWords();
    Ads();
    Extensions();
    Bids()
-   var spreadsheet = initSpreadsheet();
    writeDataGeneral(spreadsheet);
   
 }
