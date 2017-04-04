@@ -115,7 +115,7 @@ function languages(campaign) {
 
 function Settings(s) { 
   
-  var headers = ["Campaign","GEO","ROTATION","PUBLISH MODE"];
+  var headers = ["Campaign","Geo","Rotation","Publish"];
   writeHds(s,headers);
   
   for(i in activeCampaigns){
@@ -198,6 +198,8 @@ function noPlusKw(campaign){
 }
 
 function kwQStatus(campaign){
+  var adgroups = [];
+  var data = [];
   var report = AdWordsApp.report(
     'SELECT Criteria, CampaignName, AdGroupName, QualityScore, SearchPredictedCtr, CreativeQualityScore, PostClickQualityScore ' +
     'FROM   KEYWORDS_PERFORMANCE_REPORT ' +
@@ -223,84 +225,63 @@ function kwQStatus(campaign){
     var landingRelevance = row['PostClickQualityScore'];
     
     
-    if(expCTR == "Below average"){
-      var kw = {
-        campaign : row['CampaignName'],
-        adGroup : row['AdGroupName'],
-        text : row['Criteria'],
-        status : expCTR,
-      }; 
+    if(expCTR == "Below average"){ 
       allData[campaign.getName()]["QSBelow"] += 1;
       Logger.log( allData[campaign.getName()]["QSBelow"])
-      qsStatus.push(kw);
+      data.push(row['Criteria']+" (Below Average expected CTR)");
+      adgroups.push(row['AdGroupName']);
     }
     if(expCTR == "Average"){
-      var kw = {
-        campaign : row['CampaignName'],
-        adGroup : row['AdGroupName'],
-        text : row['Criteria'],
-        status : expCTR,
-      }; 
       allData[campaign.getName()]["QSAverage"] += 1;
-      qsStatus.push(kw);
+      data.push(row['Criteria']+" (Average expected CTR)");
+      adgroups.push(row['AdGroupName']);
     }
     if(adRelevance == "Below average"){
-      var kw = {
-        campaign : row['CampaignName'],
-        adGroup : row['AdGroupName'],
-        text : row['Criteria'],
-        relevance : adRelevance,
-      };
+      data.push(row['Criteria']+" (Below Average ad Relevance)");
+      adgroups.push(row['AdGroupName']);
       allData[campaign.getName()]["QSAdBelow"] += 1;
-      kwRelevance.push(kw);
     }
      if(adRelevance == "Average"){
-      var kw = {
-        campaign : row['CampaignName'],
-        adGroup : row['AdGroupName'],
-        text : row['Criteria'],
-        relevance : adRelevance,
-      };
       allData[campaign.getName()]["QSAdAverage"] += 1;
-      kwRelevance.push(kw);
+      data.push(row['Criteria']+" (Average expected CTR)");
+      adgroups.push(row['AdGroupName']);
     }
     if(landingRelevance == "Below average"){
-      var kw = {
-        campaign : row['CampaignName'],
-        adGroup : row['AdGroupName'],
-        text : row['Criteria'],
-        landingRelevance : landingRelevance,
-      };
       allData[campaign.getName()]["QSLandingBelow"] += 1;
-      kwLandingRelevance.push(kw);
+      data.push(row['Criteria']+" (Below Average Landing Relevance)");
+      adgroups.push(row['AdGroupName']);
     }
   }
-  
+  var response = {
+    data : data,
+    adgroups: adgroups,
+  };
+  return response;
 }
 
 //keywords of brand campaigns with QS < 9
 function brandKWQS(campaign){
   var qslessnine = [];
-
+  var adgroups = [];
+  
    var kws = campaign.keywords().get(); 
     while(kws.hasNext()){
       var kw = kws.next();
       var qs = kw.getQualityScore();
-      if(qs < lowestQS){
-        var kwless = {
-          campaign : campaign.getName(),
-          adGroup : kw.getAdGroup(),
-          text : kw.getText(),
-          QS: qs,
-        };
+      if(qs < lowestQS && qs != null){
         allData[campaign.getName()]["brandQS"] = "X";
-        qslessnine.push(kwless);
+        qslessnine.push(kw.getText()+" (QS = "+qs+")");
+        adgroups.push(kw.getAdGroup().getName());
       }
     }
     if(allData[campaign.getName()]["brandQS"] != "X")
       allData[campaign.getName()]["brandQS"] = "OK";
-
-  return qslessnine;
+  
+  var response = {
+    data : qslessnine,
+    adgroups : adgroups,
+  };
+  return response;
 }
 
 function withOutNegatives(campaign) {
@@ -351,12 +332,13 @@ function ExactKws() {
 
 function searchTerms(campaign) {
    var shouldBe = [];
+   var adgroups = [];
    ExactKws();
    
    allData[campaign.getName()]["SearchNoNoNegative"] = 0;
   
    var report = AdWordsApp.report(
-      'SELECT Query, Conversions, CampaignId' +
+      'SELECT Query, Conversions, CampaignId, AdGroupName' +
       ' FROM SEARCH_QUERY_PERFORMANCE_REPORT' +
       ' WHERE ' +' Conversions > 0' +
       ' AND CampaignId = '+campaign.getId()+
@@ -367,13 +349,20 @@ function searchTerms(campaign) {
   while(rows.hasNext()) {
     var row = rows.next();
     var query = row['Query'];
+    var adgroup = row['AdGroupName'];
     if(exactKws.indexOf(query) == -1 && shouldBe.indexOf(query) == -1){
       shouldBe.push(query);
+      adgroups.push(adgroup);
       allData[campaign.getName()]["SearchNoNoNegative"] += 1;
     }
   }
   
-  return shouldBe;
+  var response = {
+    data : shouldBe,
+    adgroups : adgroups,
+  };
+  
+  return response;
 }
 
 function searchTermsClicks(campaign) {
@@ -449,26 +438,35 @@ function repeatedKeywords() {
 
 //Function that reports keywords and QS perfomance, and handler for all keywords data
 function KeyWords(s) {
+  
+  
   for(i in activeCampaigns){
+    var row = s.getLastRow()+1
     var obj = {};
     obj["data"] = [];
     obj["adgroups"] = [];
     
     var campaign = activeCampaigns[i];
+    var headers = ["Campaign","AdGroup","keywords en amplia que no incluyen '+'"];
+    writeHds(s, headers);
     var a = noPlusKw(campaign);
-    obj.data = obj.concat(a.data);
-    obj.adgroups = obj.concat(a.adgroups);
+    writeColumn(s,campaign.getName(),3,a);
     
     if(isBrand(campaign.getName())){
-     var b = brandKWQS(campaign); 
-     obj.data = obj.concat(b.data);
-     obj.adgroups = obj.concat(b.adgroups);
+      var headers = ["Campaign","AdGroup","keywords de las campañas “Brand” con QS<9"];
+      writeHds(s, headers);
+      var b = brandKWQS(campaign); 
+      writeColumn(s,campaign.getName(),3,b);
     }
     else
       allData[campaign.getName()]["brandQS"] = "N/A";
     
-    if(genericCampaign(campaign.getName()))
-      kwQStatus(campaign)
+    if(genericCampaign(campaign.getName())){
+      var headers = ["Campaign","AdGroup","QS Status"];
+      writeHds(s, headers);
+      var c = kwQStatus(campaign);
+      writeColumn(s,campaign.getName(),3,c);
+    }
     else{
       allData[campaign.getName()]["QSBelow"] = "N/A";
       allData[campaign.getName()]["QSAverage"] = "N/A";
@@ -477,13 +475,20 @@ function KeyWords(s) {
       allData[campaign.getName()]["QSLandingBelow"] = "N/A";
     }
     
+    //Without negatives are only names of campaigns, it isnt necesary rewrite this information
     withOutNegatives(campaign);
     
-    searchTerms(campaign);
+    var headers = ["Campaign","AdGroup","términos de búsqueda con conversiones que NO están agregados en exacta"];
+    writeHds(s, headers);
+    var d = searchTerms(campaign);
+    Logger.log("lolo " +d)
+    writeColumn(s,campaign.getName(),3,d);
     
     searchTermsClicks(campaign);
     
     searchTermsNegatives(campaign);
+    
+    //writeInSheet(s, campaign.getName(), obj);
   }
   
   //var woNegatives = 
@@ -1098,9 +1103,22 @@ function writeHds(s,h) {
   Logger.log(row)
   for(var i=0; i <  h.length; i++){
     var r = s.getRange(row,i+1);
-    r.setValue(h[i]).setFontSize(14).setHorizontalAlignment('center');
+    r.setValue(h[i]).setFontSize(14).setHorizontalAlignment('center').setWrap(true);
   }
-    
+}
+
+function writeColumn(s,campaign,column, data) { //column start at 3 cause 1 and 2 are campaign and adgroup 
+  var rowdata = s.getLastRow()+1;
+  
+  for(var i = 0; i < data.data.length ; i++,rowdata++){
+     var range = s.getRange(rowdata,column);
+     range.setValue(data.data[i]).setHorizontalAlignment('center').setWrap(true); 
+     range = s.getRange(rowdata,1);
+     range.setValue(campaign).setHorizontalAlignment('center').setWrap(true); 
+     range = s.getRange(rowdata,2);
+     range.setValue(data.adgroups[i]).setHorizontalAlignment('center').setWrap(true); 
+  }
+
 }
   
 function main() {  
@@ -1108,7 +1126,8 @@ function main() {
    var spreadsheet = initSpreadsheet();
    var sheet = spreadsheet.getSheetByName("settings");
    Settings(sheet);  
-   KeyWords();
+   sheet = spreadsheet.getSheetByName("kw & QS");
+   KeyWords(sheet);
    Ads();
    Extensions();
    Bids()
